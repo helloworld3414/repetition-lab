@@ -1240,3 +1240,11 @@ body.resizing .tool-wrap,body.resizing .content{pointer-events:none}
   .code-head{flex-wrap:wrap; gap:6px}
 }
 .tools-cap,.agent-panel .bubble{max-width:min(85%,620px)}
+
+/* AI 서버 설정 */
+.relay-f{display:flex; flex-direction:column; gap:8px; min-width:0}
+.relay-in{width:100%; height:40px; border:1px solid var(--line-input); border-radius:var(--r-sm); padding:0 12px; background:var(--field); color:var(--ink); font-family:var(--font-code); font-size:.8125rem}
+.relay-in.short{max-width:220px}
+.relay-in:focus{outline:none; border-color:var(--primary); box-shadow:0 0 0 1px var(--primary)}
+.setting:has(.relay-f){grid-template-columns:minmax(0,1fr)}
+.setting .relay-f{grid-column:1 / -1}

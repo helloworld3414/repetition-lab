@@ -216,6 +216,7 @@ async function liveReply(ctx, text, intent, af, excludeId) {
     S.chat = S.chat.filter(x => x.id !== m.id);
     const el = $('[data-mid="' + m.id + '"]'); if (el) el.remove();
     if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(code)) { sampleState = "denied"; pushMsg("system", "실시간 AI를 쓸 수 없어 미리 준비한 대본 응답으로 바꿨어요."); }
+    else if (code === "relay_denied") pushMsg("system", "AI 서버가 이 화면의 요청을 받지 않아 대본 응답으로 답할게요. 선생님께 알려 주세요.");
     else if (code === "rate_limited") pushMsg("system", "요청이 많아 이번에는 대본 응답으로 답할게요. 잠시 뒤에 다시 물어봐 주세요.");
     else pushMsg("system", "연결이 잠깐 끊겨 이번에는 대본 응답으로 답할게요.");
     log("commented", "engine-fallback", "대본 응답으로 바꿈", "interaction", null, { code: code || "unknown" });
@@ -416,7 +417,7 @@ async function agentSend(text, intent) {
   }
   busy = false; ctl = null;
   const leak = processAfter(ctx, result.meta, result.text, text);
-  log("responded", "agent-dialog", "에이전트 대화", "interaction", { response: result.text }, { engine: used, "context-id": ctx.id, meta: result.meta || null, "possible-answer-leak": leak, chars: result.text.length }, agentActor());
+  log("responded", "agent-dialog", "에이전트 대화", "interaction", { response: result.text }, { engine: used === "live" ? (engineKind === "relay" ? "relay" : "live") : used, model: result.msg && result.msg.tier || null, "context-id": ctx.id, meta: result.meta || null, "possible-answer-leak": leak, chars: result.text.length }, agentActor());
   persist();
   renderAgent();
   if (!isNarrow() || sheetOpen) { const tIn = $("#chatIn"); if (tIn) tIn.focus(); }
@@ -426,7 +427,19 @@ async function agentSend(text, intent) {
 function sw(k, label) { return '<button class="switch" role="switch" aria-checked="' + (!!settings[k]) + '" data-act="toggle" data-k="' + k + '" aria-label="' + esc(label) + '"></button>'; }
 function segCtl(k, opts, label) { return '<div class="seg-ctl" role="group" aria-label="' + esc(label) + '">' + opts.map(([v, l]) => '<button data-act="set" data-k="' + k + '" data-v="' + v + '" aria-pressed="' + (String(settings[k]) === String(v)) + '">' + l + "</button>").join("") + "</div>"; }
 function settingRow(name, ctlHtml, desc) { return '<div class="setting"><span class="sname">' + name + "</span>" + ctlHtml + '<span class="sdesc">' + desc + "</span></div>"; }
+function relayCtl() {
+  const r = relayConf(), own = !!settings.relayUrl;
+  return '<div class="relay-f"><label class="sr-only" for="relayUrl">AI 서버 주소</label><input class="relay-in" id="relayUrl" name="relayUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…lambda-url…on.aws/" value="' + esc(settings.relayUrl || "") + '">' +
+    '<label class="sr-only" for="relayCode">접속 코드</label><input class="relay-in short" id="relayCode" name="relayCode" type="password" autocomplete="off" placeholder="접속 코드(있으면)…" value="' + esc(settings.relayCode || "") + '">' +
+    '<div class="row"><button class="btn btn-secondary btn-sm" data-act="relay-save">저장</button><button class="btn btn-secondary btn-sm" data-act="relay-test"' + (r.url ? "" : " disabled") + '>연결 시험</button>' + (own ? '<button class="btn btn-ghost btn-sm" data-act="relay-clear">비우기</button>' : "") + "</div>" +
+    '<p class="small muted" id="relayStatus" aria-live="polite" style="margin:0">' + (r.url ? (own ? "이 브라우저 설정 주소를 써요." : "소스에 넣은 기본 주소를 써요.") : "주소 없음") + "</p></div>";
+}
 function engineStateText() {
+  if (!inArtifact()) {
+    if (engineKind === "relay" && sampleState === "ready") return "AI 서버로 실시간 대화를 해요.";
+    if (engineKind === "relay") return "AI 서버를 쓸 수 없어 대본 응답으로 돌고 있어요.";
+    return "AI 서버 주소가 없어 대본 응답으로 돌아요. 아래에 주소를 넣으면 실시간으로 대화해요.";
+  }
   if (sampleState === "pending") return "연결 확인 중이에요.";
   if (sampleState === "ready") return "이 화면에서 실시간 AI를 쓸 수 있어요. 처음 쓸 때 허용을 물어봐요.";
   if (sampleState === "denied") return "허용되지 않아 대본 응답으로 돌고 있어요.";
@@ -443,8 +456,9 @@ function drawerSettings() {
     settingRow("답안 칸 붙여넣기 막기", sw("blockPaste", "붙여넣기 막기"), "대화창의 문장을 복사해 서술형 답안 칸에 붙이는 것을 막아요(Lehmann 외, 2025).") +
     settingRow("에이전트가 먼저 말 걸기", sw("proactive", "먼저 말 걸기"), "알아봐요 1·2에 들어갈 때와, 오류를 지정한 확인 문항에서 처음 답을 골랐을 때 두 조건 모두 같은 시점에 한 번씩 말을 걸어요. 러닝메이트의 지정 오류가 드러나는 시점이에요.") +
     settingRow("대화 횟수 상한", '<input class="num-in" type="number" id="setCap" min="5" max="100" value="' + settings.turnCap + '" aria-label="대화 횟수 상한">', "학생 발화 기준이에요. 상한을 고정하면 대화 횟수를 종속변인으로 쓸 수 없으니 회의에서 둘 중 하나로 정해야 해요.") +
-    settingRow("응답 방식", segCtl("engine", [["live", "실시간 AI"], ["script", "대본"]], "응답 방식"), "실시간 AI는 보는 사람의 Claude 사용량을 써요. " + engineStateText() + " 대본 응답은 미리 쓴 문장으로 같은 규칙을 흉내 내요.") +
+    settingRow("응답 방식", segCtl("engine", [["live", "실시간 AI"], ["script", "대본"]], "응답 방식"), (inArtifact() ? "claude.ai에서는 보는 사람의 Claude 사용량을 써요. " : "배포판에서는 AI 서버가 연구팀 API 계정으로 불러요. ") + engineStateText() + " 대본 응답은 미리 쓴 문장으로 같은 규칙을 흉내 내요.") +
     settingRow("모델 등급", segCtl("tier", [["quick", "빠름"], ["default", "기본"]], "모델 등급"), "빠름은 1~2초 안에 답하고, 기본은 5~60초 걸리지만 역할 규칙을 더 잘 지켜요.") +
+    settingRow("AI 서버", relayCtl(), inArtifact() ? "claude.ai 안에서는 쓰지 않고 내장 AI를 써요. GitHub 주소나 내려받은 파일에서 쓰는 설정이에요." : "중계 서버(예: AWS Lambda 함수 URL) 주소예요. 여기 넣은 값은 이 브라우저에만 저장돼요. 학생 기기 전체에 쓰려면 소스의 RELAY_DEFAULT에 넣고 다시 배포해요.") +
     settingRow("차시 끝 조작 확인 문항", sw("manipCheck", "조작 확인 문항"), "마침 화면에서 ‘이 AI는 나보다 잘 아는 것 같았다’, ‘이 AI가 나를 평가한다고 느꼈다’를 5점 척도로 물어요.") +
     "</div>" +
     (S ? '<div class="row"><button class="btn btn-secondary btn-sm" data-act="restart-ask">지금 세션 처음부터 다시</button><button class="btn btn-ghost btn-sm" data-act="switch-student">표지로 나가기</button></div>' : "");
@@ -715,6 +729,23 @@ const ACT = {
   "toggle"(el) { const k = el.dataset.k; settings[k] = !settings[k]; saveSettings(); renderDrawer(); if (S) renderLesson(); },
   "h-toggle"(el) { const r = el.dataset.r, k = el.dataset.k; settings.harness[r][k] = !settings.harness[r][k]; if (k === "key" && !settings.harness[r].key) { settings.harness[r].hints = false; settings.harness[r].judge = false; } if (k === "hints" && settings.harness[r].hints && !settings.harness[r].maxHint) settings.harness[r].maxHint = 3; saveSettings(); log("interacted", "harness/" + r + "/" + k, "하네스 설정", "interaction", { response: String(settings.harness[r][k]) }); renderDrawer(); },
   "h-mem"() { settings.harness.memLong = !settings.harness.memLong; saveSettings(); renderDrawer(); },
+  "relay-save"() {
+    settings.relayUrl = ($("#relayUrl").value || "").trim(); settings.relayCode = ($("#relayCode").value || "").trim();
+    if (settings.relayUrl && !/^https:\/\//.test(settings.relayUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(settings.relayUrl)) { $("#relayStatus").textContent = "https로 시작하는 주소를 넣어 주세요."; return; }
+    saveSettings(); useRelayIfSet(); renderDrawer(); renderAgent(); toast(settings.relayUrl ? "AI 서버 주소를 저장했어요." : "AI 서버 주소를 비웠어요.");
+  },
+  "relay-clear"() { settings.relayUrl = ""; settings.relayCode = ""; saveSettings(); useRelayIfSet(); renderDrawer(); renderAgent(); },
+  async "relay-test"() {
+    const st = $("#relayStatus"); if (st) st.textContent = "시험하는 중…";
+    const t0 = performance.now();
+    try {
+      const fn = inArtifact() ? relaySample : (sampleFn || relaySample);
+      const res = await fn("연결 시험이다. '연결됨'이라고만 답한다.", { modelTier: "quick" });
+      const s = $("#relayStatus"); if (s) s.textContent = "연결됨 · " + Math.round(performance.now() - t0) + "ms · 모델 " + (res.modelTierApplied || "-") + " · 답: " + visiblePart(res.text).slice(0, 30);
+    } catch (e) {
+      const s = $("#relayStatus"); if (s) s.textContent = "연결 실패 · " + ({ relay_denied: "출처나 접속 코드가 허용되지 않았어요", relay_network: "서버에 닿지 못했어요(주소, CORS 확인)", relay_timeout: "시간이 너무 걸렸어요", rate_limited: "요청 횟수 제한에 걸렸어요", relay_http: "서버 오류" }[e && e.code] || "알 수 없는 오류") + (e && e.status ? " (" + e.status + ")" : "");
+    }
+  },
   "h-reset"() { settings.harness = JSON.parse(JSON.stringify(DEFAULT_SETTINGS.harness)); saveSettings(); renderDrawer(); toast("하네스를 기본값으로 되돌렸어요."); },
   "toggle-err"(el) { const k = el.dataset.id; settings.errors[k] = !settings.errors[k]; saveSettings(); renderDrawer(); },
   "copy-json"() { if (S) copyText(JSON.stringify(S.logs, null, 2)); },

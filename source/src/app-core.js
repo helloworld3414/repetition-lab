@@ -150,9 +150,9 @@ let sampleFn = null, sampleState = "pending", downloadsNs = null, runtimeResolve
 const runtimeReady = new Promise(r => { runtimeResolve = r; });
 (async function initRuntime() {
   try {
-    if (!window.claude || typeof window.claude.use !== "function") { sampleState = "none"; return; }
+    if (!window.claude || typeof window.claude.use !== "function") { useRelayIfSet(); return; }
     try { sampleFn = await window.claude.use("sample"); } catch (e) { sampleFn = null; }
-    sampleState = sampleFn ? "ready" : "none";
+    sampleState = sampleFn ? "ready" : "none"; engineKind = sampleFn ? "claude" : "none";
     try { downloadsNs = await window.claude.use("downloads"); } catch (e) { downloadsNs = null; }
   } finally {
     runtimeResolve();
@@ -160,7 +160,59 @@ const runtimeReady = new Promise(r => { runtimeResolve = r; });
     renderAgentStatus();
   }
 })();
-const inArtifact = () => !!(window.claude && typeof window.claude.use === "function");
+function inArtifact() { return !!(window.claude && typeof window.claude.use === "function"); }
+/* ----- AI 중계 서버(배포판 실시간 AI) -----
+   보내는 것: 화면이 만든 프롬프트, 모델 등급, 가명 식별자, 조건. API 키는 서버에만 있다. */
+var engineKind = "none";
+function relayConf() {
+  const url = String(settings.relayUrl || RELAY_DEFAULT.url || "").trim();
+  const code = settings.relayUrl ? String(settings.relayCode || "") : String(RELAY_DEFAULT.code || "");
+  return { url, code };
+}
+function useRelayIfSet() {
+  if (inArtifact()) return;
+  const r = relayConf();
+  if (r.url) { sampleFn = relaySample; sampleState = "ready"; engineKind = "relay"; }
+  else { sampleFn = null; sampleState = "none"; engineKind = "none"; }
+}
+async function relaySample(prompt, opts) {
+  opts = opts || {};
+  const r = relayConf();
+  const ctrl = new AbortController(), outer = opts.signal;
+  const onAbort = () => ctrl.abort();
+  if (outer) { if (outer.aborted) ctrl.abort(); else outer.addEventListener("abort", onAbort); }
+  const timer = setTimeout(() => ctrl.abort("timeout"), 70000);
+  let acc = "";
+  try {
+    let res;
+    try {
+      res = await fetch(r.url, { method: "POST", signal: ctrl.signal, headers: Object.assign({ "content-type": "application/json" }, r.code ? { "x-access-code": r.code } : {}),
+        body: JSON.stringify({ prompt, tier: opts.modelTier || "quick", session: S ? S.student.pid : "test", condition: S ? S.condition : "", role: S && S.agentType ? agentInfo().role : "" }) });
+    } catch (e) {
+      if (outer && outer.aborted) throw { code: "cancelled", text: acc };
+      throw { code: ctrl.signal.aborted ? "relay_timeout" : "relay_network", message: String(e && e.message || e) };
+    }
+    if (!res.ok) { let body = {}; try { body = await res.json(); } catch (e) { /* 무시 */ } throw { code: res.status === 401 || res.status === 403 ? "relay_denied" : res.status === 429 ? "rate_limited" : "relay_http", status: res.status, message: body.error || "" }; }
+    const type = res.headers.get("content-type") || "";
+    if (type.includes("application/json")) {
+      const j = await res.json();
+      acc = String(j.text || "");
+      if (opts.onText && acc) opts.onText({ text: acc, delta: acc });
+      return { text: acc, truncated: false, modelTierApplied: j.model || opts.modelTier };
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      const delta = dec.decode(value, { stream: true }); acc += delta;
+      if (opts.onText) opts.onText({ text: acc, delta });
+    }
+    return { text: acc, truncated: false, modelTierApplied: res.headers.get("x-model") || opts.modelTier };
+  } catch (e) {
+    if (e && e.code) throw e;
+    if (outer && outer.aborted) throw { code: "cancelled", text: acc };
+    throw { code: "relay_network", message: String(e && e.message || e) };
+  } finally { clearTimeout(timer); if (outer) outer.removeEventListener("abort", onAbort); }
+}
 /* 아티팩트 밖(내려받은 html 파일)에서는 브라우저 기본 내려받기로 저장한다. */
 function localSave(filename, data) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: "text/plain;charset=utf-8" });
@@ -698,7 +750,7 @@ function renderAgent() {
     return;
   }
   const head = panelBar("AI 대화") + '<div class="agent-head"><span class="ava" aria-hidden="true">' + info.mark + '</span><div class="agent-id"><span class="agent-name">' + info.name + ' <span class="ai-badge">AI</span></span><span class="agent-role">' + esc(info.sub) + "</span></div>" + closeBtn() + "</div>" +
-    '<div class="ai-line">' + roleLine(info) + (engineNow() === "script" ? '<span class="script-note">지금은 미리 쓴 대본으로 답해요. ' + (inArtifact() ? "연구자 보기 설정에서 실시간 AI를 켤 수 있어요." : "내려받은 파일에서는 실시간 AI를 쓸 수 없어요.") + "</span>" : "") + "</div>" +
+    '<div class="ai-line">' + roleLine(info) + (engineNow() === "script" ? '<span class="script-note">지금은 미리 쓴 대본으로 답해요. ' + (inArtifact() ? "연구자 보기 설정에서 실시간 AI를 켤 수 있어요." : relayConf().url ? "AI 서버에 연결하지 못했어요." : "AI 서버가 연결되지 않았어요.") + "</span>" : "") + "</div>" +
     '<div class="ctx-line"><span>지금 보는 곳</span><b id="agentCtx">' + esc(ctxLabel()) + "</b></div>";
   if (S.stage === "formative") {
     el.innerHTML = head + '<div class="lock"><span class="lock-mark" aria-hidden="true"><svg width="18" height="20" viewBox="0 0 18 20" fill="none"><rect x="1.5" y="8.5" width="15" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 8.5V5.5a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.5"/></svg></span>' +
