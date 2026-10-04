@@ -1,0 +1,43 @@
+import pathlib, os
+URL_TEST = (pathlib.Path(__file__).resolve().parent.parent / "out" / "test.html").as_uri()
+os.makedirs("shots", exist_ok=True)
+from playwright.sync_api import sync_playwright
+URL=URL_TEST; errs=[]
+with sync_playwright() as p:
+    b=p.chromium.launch(); pg=b.new_page(viewport={"width":1280,"height":900})
+    pg.on("console", lambda m: errs.append(m.text) if m.type=="error" else None); pg.on("pageerror", lambda e: errs.append(str(e)))
+    pg.goto(URL); pg.wait_for_timeout(800)
+    pg.click("#entryForm button[type=submit]"); pg.click("[data-act=course-open][data-id=info]"); pg.click("#goLesson"); pg.click("[data-act=notice-next]"); pg.click("label.choice >> nth=1"); pg.click("[data-act=choose-start]"); pg.wait_for_timeout(300)
+    pg.click("[data-act=toc-seg][data-i='2']"); pg.wait_for_timeout(300)
+    print("open-lab buttons", pg.locator(".open-lab").count())
+    pg.locator(".open-lab").first.click(); pg.wait_for_timeout(300)
+    print("editor:", pg.input_value("#codeEditor")[:60].replace("\n","|"))
+    pg.fill("#codeEditor", 'n = int(input())\nfor i in range(1, n + 1):\n    print(i, "짝" if i % 3 == 0 else "")\n')
+    pg.fill("#codeStdin", "7")
+    pg.click("[data-act=lab-run]"); pg.wait_for_function("() => !/불러오는|실행하는/.test(document.querySelector('#codeOut').textContent)", timeout=30000)
+    print("PY OUT:", pg.text_content("#codeOut").replace("\n","|"))
+    pg.fill("#codeEditor", "while True:\n    pass\n"); pg.click("[data-act=lab-run]"); pg.wait_for_function("() => !/실행하는/.test(document.querySelector('#codeOut').textContent)", timeout=30000)
+    print("PY LOOP:", pg.text_content("#codeOut")[:80].replace("\n","|"))
+    pg.click("[data-act=lab-lang][data-v=c]"); pg.wait_for_timeout(200)
+    pg.click("[data-act=lab-run]"); pg.wait_for_function("() => !/실행하는/.test(document.querySelector('#codeOut').textContent)", timeout=30000)
+    print("C OUT:", pg.text_content("#codeOut").replace("\n","|"))
+    pg.fill("#codeEditor", '#include <stdio.h>\nint main(){ int n; scanf("%d", &n); printf("입력: %d\\n", n*2); return 0; }\n'); pg.fill("#codeStdin","21")
+    pg.click("[data-act=lab-run]"); pg.wait_for_function("() => !/실행하는/.test(document.querySelector('#codeOut').textContent)", timeout=30000)
+    print("C IN:", pg.text_content("#codeOut").replace("\n","|"))
+    pg.fill("#codeEditor", '#include <stdio.h>\nint main(){ while(1){} return 0; }\n')
+    pg.click("[data-act=lab-run]"); pg.wait_for_timeout(1000); print("stop visible", pg.is_visible("#labStop")); pg.click("[data-act=lab-stop]"); pg.wait_for_timeout(200)
+    print("C STOP:", pg.text_content("#codeOut"))
+    pg.fill("#codeEditor", '#include <stdio.h>\nint main(){ int x = ; }\n'); pg.click("[data-act=lab-run]"); pg.wait_for_function("() => !/실행하는/.test(document.querySelector('#codeOut').textContent)", timeout=30000)
+    print("C ERR:", pg.text_content("#codeOut")[:150].replace("\n","|"))
+    pg.click("[data-act=lab-download]"); pg.wait_for_timeout(300)
+    print("toast:", pg.evaluate("() => (document.querySelector('.toast')||{}).textContent"))
+    # zip check
+    z=pg.evaluate("""async () => { const bl = (function(){ return null; })(); return null; }""")
+    pg.screenshot(path="shots/40-codelab.png", full_page=True)
+    # tab key
+    pg.fill("#codeEditor",""); pg.focus("#codeEditor"); pg.keyboard.press("Tab"); print("tab ->", repr(pg.input_value("#codeEditor")))
+    # formative hides lab
+    pg.click("[data-act=toc-seg][data-i='5']"); pg.click("[data-act=to-check]"); pg.wait_for_timeout(200); print("check lab", pg.locator("#codeLab").count())
+    pg.emulate_media(color_scheme="dark"); pg.locator("#codeLab").scroll_into_view_if_needed(); pg.screenshot(path="shots/41-codelab-dark.png")
+    b.close()
+print("ERRS", errs[:10])
