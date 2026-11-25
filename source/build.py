@@ -11,7 +11,7 @@ out.mkdir(exist_ok=True)
 css = (src / "styles.css").read_text(encoding="utf-8")
 font64 = base64.b64encode((vendor / "pretendard-gov-sub.woff2").read_bytes()).decode()
 css = css.replace("/*FONT*/", '@font-face{font-family:"Pretendard GOV"; src:url(data:font/woff2;base64,' + font64 + ') format("woff2"); font-weight:400 700; font-style:normal; font-display:swap}')
-js = "(function(){\n" + "\n".join((src / f).read_text(encoding="utf-8") for f in ["data.js", "app-core.js", "app-lab.js", "app-shell.js", "app-agent.js"]) + "\n})();"
+js = "(function(){\n" + "\n".join((src / f).read_text(encoding="utf-8") for f in ["data.js", "app-core.js", "app-lab.js", "app-shell.js", "app-studio.js", "app-agent.js"]) + "\n})();"
 page = (src / "body.html").read_text(encoding="utf-8").replace("/*CSS*/", css).replace("/*JS*/", js)
 if "codeLab: true" in (src / "data.js").read_text(encoding="utf-8"):
     lib = (vendor / "JSCPP.es5.min.js").read_text(encoding="utf-8")

@@ -9,7 +9,8 @@
 //   ACCESS_CODE        (선택) 화면 연구자 보기의 접속 코드와 같은 값. 비밀은 아니고 엉뚱한 호출을 거르는 용도
 //   MODEL_QUICK        화면 '빠름' 등급에 쓸 모델 이름
 //   MODEL_DEFAULT      화면 '기본' 등급에 쓸 모델 이름
-//   MAX_TOKENS         답 길이 상한(기본 600)
+//   MAX_TOKENS         답 길이 기본값(기본 600). 화면이 maxTokens를 보내면 MAX_TOKENS_CAP까지 따른다
+//   MAX_TOKENS_CAP     화면이 요청할 수 있는 답 길이 상한(기본 4000). 관리자 화면의 AI 설계가 길게 쓴다
 //   TEMPERATURE        (선택) 0~1. 비우면 API 기본값. 두 조건에 같은 값을 쓴다
 //   PER_SESSION_LIMIT  가명 식별자 하나당 호출 상한(기본 60). 함수가 살아 있는 동안만 세는 간이 제한
 //   LOG_TEXT           1이면 프롬프트와 답 전문을 CloudWatch에 남긴다(IRB 승인 범위 확인 뒤 켤 것)
@@ -18,7 +19,7 @@ const API = "https://api.anthropic.com/v1/messages";
 const env = process.env;
 const ORIGINS = (env.ALLOWED_ORIGINS || "https://helloworld3414.github.io").split(",").map(s => s.trim()).filter(Boolean);
 const MODELS = { quick: env.MODEL_QUICK || "claude-haiku-4-5-20251001", default: env.MODEL_DEFAULT || "claude-sonnet-5" };
-const MAX_PROMPT = 60000;
+const MAX_PROMPT = 80000;
 const LIMIT = Number(env.PER_SESSION_LIMIT || 60);
 const seen = new Map();
 
@@ -52,7 +53,8 @@ export const handler = async (event) => {
   if (n > LIMIT) return reply(429, { error: "rate_limited" }, allowed);
 
   const model = MODELS[req.tier] || MODELS.quick;
-  const body = { model, max_tokens: Number(env.MAX_TOKENS || 600), messages: [{ role: "user", content: prompt }] };
+  const cap = Number(env.MAX_TOKENS_CAP || 4000), want = Number(req.maxTokens) || Number(env.MAX_TOKENS || 600);
+  const body = { model, max_tokens: Math.max(64, Math.min(cap, want)), messages: [{ role: "user", content: prompt }] };
   if (env.TEMPERATURE !== undefined && env.TEMPERATURE !== "") body.temperature = Number(env.TEMPERATURE);
 
   const t0 = Date.now();

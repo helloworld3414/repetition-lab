@@ -89,13 +89,14 @@ ICONS.pin = '<path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/>';
 let courseId = null, homeOpen = false, page = "dash", tocOpen = true, sideOpen = false, toolTab = null, boardView = null, coursePane = "list", review = null;
 
 function shellMode() {
+  if (studioOpen) return "studio";
   if (!S) return "cover";
   if (!courseId || !course()) return "hub";
   if (homeOpen) return "home";
   return "lesson";
 }
-function course() { return COURSES.find(c => c.id === courseId) || null; }
-function myCourses() { return S ? COURSES.filter(c => c.classCode === S.student.classCode) : []; }
+function course() { return COURSES.find(c => c.id === courseId) || progCourses().find(c => c.id === courseId) || null; }
+function myCourses() { if (!S) return []; const joined = S.joined || []; return COURSES.filter(c => c.classCode === S.student.classCode).concat(progCourses().filter(c => c.classCode === S.student.classCode || joined.includes(c.prog))); }
 function hasLesson(c) { return !!(c && c.content === "info"); }
 const WK = ["일", "월", "화", "수", "목", "금", "토"];
 const DFMT = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", weekday: "short" });
@@ -113,7 +114,7 @@ function sessions(c) {
   for (let i = 0; i < 70 && out.length < 12; i++) { slotOf(x).forEach(s => out.push({ date: new Date(x), p: s.p })); x.setDate(x.getDate() + 1); }
   return out;
 }
-function planOf(c) { return (c && PLAN[c.content]) || []; }
+function planOf(c) { if (isProg(c)) { const p = progOf(c); return p ? p.sessions.map((s, i) => ({ unit: "", no: i + 1, title: s.title, open: true })) : []; } return (c && PLAN[c.content]) || []; }
 function lessonWhen(c, no) { const s = sessions(c)[no - 1]; return s ? DFMT.format(s.date) + " " + s.p + "교시" : ""; }
 
 /* ----- 표시 조각: 차시 상자, 상태 칩 ----- */
@@ -190,15 +191,16 @@ function pageHub() {
   const list = myCourses(), today = new Date();
   const card = c => {
     const t = c.slots.filter(s => s.d === today.getDay()).sort((a, b) => a.p - b.p)[0];
-    const pct = hasLesson(c) ? overallProgress() : null;
+    const pg = isProg(c) ? progOf(c) : null;
+    const pct = pg ? progPct(pg) : hasLesson(c) ? overallProgress() : null;
     return '<li><button class="hub-card" data-act="course-open" data-id="' + c.id + '">' +
-      '<span class="hub-top"><span class="hub-ic" aria-hidden="true">' + ic(c.content === "info" ? "code" : "book") + "</span>" + (t ? '<span class="hub-today">오늘 ' + t.p + "교시</span>" : "") + "</span>" +
-      '<span class="hub-b"><b class="hub-name">' + esc(c.subject) + '</b><span class="hub-meta">' + esc(c.classCode) + "반 · " + esc(c.teacher) + ' 선생님</span><span class="hub-meta">' + ic("cal") + esc(slotsText(c)) + "</span></span>" +
+      '<span class="hub-top"><span class="hub-ic" aria-hidden="true">' + ic(c.content === "info" ? "code" : "book") + "</span>" + (t ? '<span class="hub-today">오늘 ' + t.p + "교시</span>" : "") + (pg ? '<span class="hub-kind">' + PKIND[pg.kind] + "</span>" : "") + "</span>" +
+      '<span class="hub-b"><b class="hub-name">' + esc(c.subject) + '</b><span class="hub-meta">' + (pg && pg.kind !== "course" ? esc(pg.teacher ? pg.teacher + " 강사" : "참가 코드로 들어옴") : esc(c.classCode) + "반 · " + esc(c.teacher) + " 선생님") + '</span><span class="hub-meta">' + ic("cal") + esc(pg ? whenText(pg) : slotsText(c)) + "</span></span>" +
       '<span class="hub-f">' + (pct == null ? '<span class="muted">수업 자료 준비 중</span>' : "<span>진도 " + pct + "%</span>" + pbarRow(pct)) + "</span></button></li>";
   };
   return '<div class="page page-hub"><div class="hub-head"><h1 data-focus tabindex="-1">내 수업</h1><p>' + esc(S.student.classCode) + "반 " + esc(S.student.number) + "번 · 선생님이 추가한 과목이 여기에 보여요.</p></div>" +
     (list.length ? '<ul class="hub-grid">' + list.map(card).join("") + "</ul>"
-      : '<div class="dcard">' + emptyBox("추가된 과목이 없어요. 선생님이 과목을 추가하면 여기에 보여요.") + "</div>") + "</div>";
+      : '<div class="dcard">' + emptyBox("추가된 과목이 없어요. 선생님이 과목을 추가하면 여기에 보여요.") + "</div>") + joinBox() + "</div>";
 }
 
 /* ----- 과목 대시보드 ----- */
@@ -557,6 +559,8 @@ function pageMemo() {
 }
 function viewHome() {
   if (shellMode() === "hub") return pageHub();
+  const pc = course();
+  if (isProg(pc)) { const f = { dash: progDash, course: progCoursePage, record: progRecord, sess: progSessPage }[page]; if (f) return f(pc); }
   return ({ dash: pageDash, course: pageCourse, task: pageTask, record: pageRecord, board: pageBoard, memo: pageMemo }[page] || pageDash)();
 }
 
@@ -639,7 +643,7 @@ function renderToc() {
   app.dataset.sideOpen = sideOpen ? "1" : "0";
   el.className = "side " + (mode === "lesson" ? "side-toc" : "side-dash");
   el.setAttribute("aria-label", mode === "lesson" ? "수업 목차" : "메뉴");
-  el.innerHTML = mode === "cover" || mode === "hub" ? "" : mode === "lesson" ? sideToc() : sideMenu();
+  el.innerHTML = mode === "cover" || mode === "hub" ? "" : mode === "lesson" ? sideToc() : mode === "studio" ? studioMenu() : sideMenu();
   renderGnb(); renderTools();
 }
 function renderGnb() {
@@ -647,7 +651,7 @@ function renderGnb() {
   const mode = shellMode(), c = course();
   g.innerHTML = mode === "lesson" ? '<span class="gc-a">' + esc(c.subject) + " · " + UNIT_NOW + "</span>" + ic("arrow") + chipNo(LESSON_NO, true) + "<b>" + esc(LESSON.title) + "</b>" : "";
   const end = $("#endBtn"); if (end) end.hidden = mode !== "lesson";
-  const who = $("#whoChip"); if (who) { who.hidden = !S; if (S) who.textContent = S.student.classCode + "반 " + S.student.number + "번"; }
+  const who = $("#whoChip"); if (who) { who.hidden = !S && mode !== "studio"; who.textContent = mode === "studio" ? "관리자" : S ? S.student.classCode + "반 " + S.student.number + "번" : ""; }
   const t = $("#sideToggle"); if (t) { t.hidden = mode === "cover" || mode === "hub"; t.setAttribute("aria-expanded", String(mode === "lesson" ? tocOpen : sideOpen)); t.setAttribute("aria-label", mode === "lesson" ? "수업 목차 열고 닫기" : "메뉴 열고 닫기"); }
 }
 
@@ -655,17 +659,19 @@ function renderGnb() {
 function renderTools() {
   const rail = $("#toolRail"); if (!rail) return;
   const mode = shellMode(), app = $(".app");
-  if (mode === "cover" || mode === "hub") { rail.innerHTML = ""; app.dataset.tool = ""; app.dataset.hasAi = "0"; document.body.dataset.hasAi = "0"; $("#toolPane").innerHTML = ""; return; }
-  const lessonOk = hasLesson(course());
+  if (mode === "cover" || mode === "hub" || mode === "studio") { rail.innerHTML = ""; app.dataset.tool = ""; app.dataset.hasAi = "0"; document.body.dataset.hasAi = "0"; $("#toolPane").innerHTML = ""; return; }
+  const lessonOk = hasLesson(course()), progOk = isProg(course());
+  if (!progOk && toolTab === "ask") toolTab = null;
   if (!lessonOk && (toolTab === "ai" || toolTab === "gloss")) toolTab = null;
   const info = agentInfo();
   const t = (id, icon, label) => '<button class="tool-btn' + (toolTab === id ? " on" : "") + '" data-act="tool" data-v="' + id + '" aria-pressed="' + (toolTab === id) + '">' + ic(icon) + "<span>" + label + "</span></button>";
-  rail.innerHTML = (lessonOk ? t("ai", "chat", info ? info.name.replace("러닝", "러닝 ") : "AI") : "") + t("memo", "activity", "노트") + (lessonOk ? t("gloss", "learn", "용어") : "");
+  rail.innerHTML = (lessonOk ? t("ai", "chat", info ? info.name.replace("러닝", "러닝 ") : "AI") : "") + (progOk ? t("ask", "chat", "AI 질문") : "") + t("memo", "activity", "노트") + (lessonOk ? t("gloss", "learn", "용어") : "");
   app.dataset.tool = toolTab || "";
   app.dataset.hasAi = lessonOk ? "1" : "0"; document.body.dataset.hasAi = app.dataset.hasAi;
   applyPaneW();
   const pane = $("#toolPane");
-  if (toolTab === "memo") pane.innerHTML = memoPane();
+  if (toolTab === "ask") pane.innerHTML = askPane();
+  else if (toolTab === "memo") pane.innerHTML = memoPane();
   else if (toolTab === "gloss") pane.innerHTML = glossPane();
   else pane.innerHTML = "";
 }
@@ -713,6 +719,7 @@ function setPaneW(w) { view.paneW = Math.round(Math.max(PANE_MIN, Math.min(w, pa
 })();
 function memoCtx() {
   const base = { course: courseId, unit: UNIT_NOW, lesson: LESSON.lessonNo + " " + LESSON.title };
+  if (S && isProg(course()) && page === "sess" && progSid) { const p = progOf(course()), ss = p && p.sessions.find(x => x.id === progSid); if (ss) return { id: "p-" + p.id + "-" + ss.id, label: ss.title, course: courseId, unit: p.title, lesson: ss.title, target: { kind: "general" } }; }
   if (!S || shellMode() !== "lesson") return { id: "general-" + courseId, label: "클래스 홈에서 적은 노트", course: courseId, target: { kind: "general" } };
   if (review) {
     if (review.k === "seg") { const g = SEGMENTS[review.i]; return Object.assign(base, { id: g.id, label: g.label + " · " + g.title, target: { kind: "seg", i: review.i } }); }
@@ -821,10 +828,12 @@ const SHELL_ACT = {
     if (narrowTools() && v === "ai") { setSheet(true); return; }
     if (narrowTools() && v === "memo") { memoModal(); return; }
     if (narrowTools() && v === "gloss") { glossModal(); return; }
+    if (narrowTools() && v === "ask") { askModal(); return; }
     toolTab = toolTab === v ? null : v; renderTools();
     if (toolTab) log("interacted", "tool/" + toolTab, "도구 열기", "interaction");
     if (toolTab === "ai") { scrollMsgs(); const t = $("#chatIn"); if (t) t.focus(); }
     if (toolTab === "memo") { const t = $("#memoTa"); if (t) t.focus(); }
+    if (toolTab === "ask") { const t = $("#askIn"); if (t) t.focus(); const l = $(".ask-log"); if (l) l.scrollTop = l.scrollHeight; }
   },
   "memo-open"() { if (!S) return; if (narrowTools()) memoModal(); else { toolTab = "memo"; renderTools(); const t = $("#memoTa"); if (t) t.focus(); } },
   "memo-save"(el) {
@@ -911,7 +920,7 @@ const SHELL_ACT = {
   "lad-reset"(el) { pstate(el.dataset.id).shown = []; persist(); renderLesson(); },
   "file-dl"(el) {
     const parts = el.dataset.src.split(":"), k = parts[0], id = parts[1];
-    const f = k === "post" ? (postById(id) || {}).file : ((S.taskSubs || {})[id] || {}).file;
+    const f = k === "post" ? (postById(id) || {}).file : k === "mat" ? ((progById(id) || {}).materials || []).find(m => m.id === parts[2]) : ((S.taskSubs || {})[id] || {}).file;
     dlFile(f);
   },
   "course-del"(el) {
