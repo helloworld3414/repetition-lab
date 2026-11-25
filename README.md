@@ -20,19 +20,14 @@
    - `data.js`: 차시 내용, 문항, 대본, 지정 오류
    - `app-core.js`: 학습 흐름, 기록(xAPI), 공통 화면
    - `app-shell.js`: 내 수업, 대시보드, 게시판, 과제, 노트, 오른쪽 창
-   - `app-studio.js`: 관리자 화면(정규 과목, 특강, 연수 만들기, 자료 올리기, AI 설계)과 만든 프로그램의 학습 화면
    - `app-agent.js`: AI 대화, 하네스, 연구자 보기
    - `data.js`의 `RELAY_DEFAULT`: 배포판이 쓸 AI 중계 서버 주소
    - `app-lab.js`: 코드 실습장
    - `styles.css`, `body.html`: 모양과 뼈대
 2. `python3 source/build.py`를 실행한다. `index.html`과 `source/out/`이 새로 만들어진다.
-3. 검사: `cd source && python3 tests/run_check.py && python3 tests/lab_check.py && python3 tests/home_check.py && python3 tests/studio_check.py` (Playwright 필요)
+3. 검사: `cd source && python3 tests/run_check.py && python3 tests/lab_check.py && python3 tests/home_check.py` (Playwright 필요)
 4. 커밋하고 올린다. 아티팩트는 `source/out/repetition-lab.html`을 같은 아티팩트 주소로 다시 올린다.
 
 ## AI 중계 서버
 
 `server/README.md`에 AWS Lambda로 올리는 순서, 환경 변수, 연구 쪽 확인 사항을 적었다.
-
-## 관리자 화면
-
-로그인 화면 아래 '관리자 화면'에서 연다(배포판은 코드 필요). 정규 과목은 학급 코드로, 특강과 연수는 참가 코드로 학습자에게 열린다. 자료(PDF, docx, hwpx, 텍스트)에서 글자를 뽑아 AI가 차시 구성과 내용 초안을 만든다. AI는 claude.ai 아티팩트나 AI 중계 서버가 연결된 배포판에서만 쓰이고, 그 밖에서는 직접 입력한다. 만든 프로그램은 실험용 하네스와 무관하며, 시연판이라 브라우저에만 저장된다.

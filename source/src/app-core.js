@@ -187,7 +187,7 @@ async function relaySample(prompt, opts) {
     let res;
     try {
       res = await fetch(r.url, { method: "POST", signal: ctrl.signal, headers: Object.assign({ "content-type": "application/json" }, r.code ? { "x-access-code": r.code } : {}),
-        body: JSON.stringify({ prompt, maxTokens: opts.maxTokens || undefined, tier: opts.modelTier || "quick", session: S ? S.student.pid : "test", condition: S ? S.condition : "", role: S && S.agentType ? agentInfo().role : "" }) });
+        body: JSON.stringify({ prompt, tier: opts.modelTier || "quick", session: S ? S.student.pid : "test", condition: S ? S.condition : "", role: S && S.agentType ? agentInfo().role : "" }) });
     } catch (e) {
       if (outer && outer.aborted) throw { code: "cancelled", text: acc };
       throw { code: ctrl.signal.aborted ? "relay_timeout" : "relay_network", message: String(e && e.message || e) };
@@ -328,7 +328,6 @@ function renderLesson() {
   const el = $("#lessonInner"); if (!el) return;
   const sm = shellMode();
   el.dataset.stage = S ? (sm === "home" || sm === "hub" ? "home" : S.stage) : "cover";
-  if (sm === "studio") { el.dataset.stage = "home"; el.innerHTML = viewStudio(); renderToc(); placeBar(); return; }
   if (!S) { el.innerHTML = viewCover(); renderToc(); placeBar(); return; }
   if (sm === "home" || sm === "hub") { el.innerHTML = viewHome(); renderToc(); placeBar(); return; }
   S.lastStudyAt = now();
@@ -367,8 +366,7 @@ function viewCover() {
       '<label for="inCode">확인 코드<input id="inCode" name="code" inputmode="numeric" autocomplete="off" spellcheck="false" value="4271"></label>' +
       '<button class="btn btn-primary" type="submit">들어가기</button>' +
       '<p class="small muted" id="entryMsg" style="margin:0">선생님이 나눠 준 카드에 적힌 코드를 넣으세요.</p>' +
-    "</form>" +
-    '<button class="login-admin" data-act="studio-open">관리자 화면: 과목, 특강, 연수 만들기</button></div>';
+    "</form></div>";
 }
 function viewNotice() {
   const coach = S.condition === "coach";

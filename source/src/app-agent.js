@@ -718,11 +718,9 @@ const ACT = {
   },
   "modal-close"() { closeModal(); },
   "modal-ok"() { const f = modalState && modalState.onOk; closeModal(); if (f) f(); },
-  "research-open"(el) {
-    if (el && el.dataset) window.__gateNext = null;
+  "research-open"() {
     if (researchUnlocked()) { openDrawer(); return; }
-    const forStudio = window.__gateNext === "studio";
-    showModal('<h2 id="mTitle">' + (forStudio ? "관리자 화면" : "연구자 보기") + "</h2><p>" + (forStudio ? "관리자 코드를 넣어 주세요." : "연구팀 코드를 넣어 주세요. 학생 화면에는 필요 없는 메뉴예요.") + "</p>" + '<form id="researchGate" class="form" style="background:transparent;border:0;padding:0" novalidate><label for="rgCode">코드<input id="rgCode" name="rgCode" type="password" inputmode="numeric" autocomplete="off" maxlength="12" required></label><p class="form-err" id="rgErr" role="alert"></p><div class="actions"><button type="button" class="btn btn-secondary" data-act="modal-close">닫기</button><button type="submit" class="btn btn-primary">열기</button></div></form>');
+    showModal('<h2 id="mTitle">연구자 보기</h2><p>연구팀 코드를 넣어 주세요. 학생 화면에는 필요 없는 메뉴예요.</p><form id="researchGate" class="form" style="background:transparent;border:0;padding:0" novalidate><label for="rgCode">연구팀 코드<input id="rgCode" name="rgCode" type="password" inputmode="numeric" autocomplete="off" maxlength="12" required></label><p class="form-err" id="rgErr" role="alert"></p><div class="actions"><button type="button" class="btn btn-secondary" data-act="modal-close">닫기</button><button type="submit" class="btn btn-primary">열기</button></div></form>');
     const i = $("#rgCode"); if (i) i.focus();
   },
   "drawer-close"() { closeDrawer(); },
@@ -754,7 +752,7 @@ const ACT = {
   "dl-json"() { saveFile("json"); },
   "dl-csv"() { saveFile("csv"); }
 };
-Object.assign(ACT, LAB_ACT, SHELL_ACT, STUDIO_ACT);
+Object.assign(ACT, LAB_ACT, SHELL_ACT);
 function enterStageNoLog(stage) { S.stage = stage; persist(); renderAll(); focusMain(); }
 document.addEventListener("click", ev => {
   const el = ev.target.closest("[data-act]");
@@ -803,8 +801,7 @@ document.addEventListener("submit", ev => {
   const v = ($("#rgCode").value || "").trim();
   if (codeHash(v) !== RESEARCH_HASH) { $("#rgErr").textContent = "코드가 맞지 않아요."; $("#rgCode").select(); return; }
   try { sessionStorage.setItem(KEY + ":rg", "1"); } catch (e) { window.__rgOk = true; }
-  closeModal();
-  if (window.__gateNext === "studio") { window.__gateNext = null; openStudio(); } else openDrawer();
+  closeModal(); openDrawer();
 });
 document.addEventListener("submit", ev => {
   if (ev.target.id !== "entryForm") return;
